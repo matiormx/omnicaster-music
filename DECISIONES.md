@@ -17,3 +17,9 @@ Registro de las decisiones que se tomaron sin preguntar (trabajo desatendido).
 - **Datos del usuario** (favoritos, historial, listas): se guardan como JSON en la tabla `kv` de SQLite; la biblioteca, en tablas propias.
 - **Contraseña**: en el almacén del sistema con `keyring`. Si no está disponible (p. ej. Linux sin Secret Service) se avisa y se pide en cada arranque; nunca se guarda en claro.
 - **Carátulas**: esquema propio `cover://` servido desde Rust con caché en disco, para no exponer credenciales en la interfaz.
+
+## Estado de la publicación (v0.1.0)
+- **Secretos y etiqueta**: desde la sesión de desarrollo no se podía escribir en los secretos de Actions (`gh secret set` → 403 del proxy), y sin la clave privada la Release firmada falla. Por eso **no se creó la etiqueta `v0.1.0`** (habría producido una ejecución fallida). Pasos: cargar `TAURI_SIGNING_PRIVATE_KEY` y `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` y luego `git tag v0.1.0 && git push origin v0.1.0`.
+- **Verificación de instaladores**: el CI construye en cada push los instaladores de Windows (NSIS en español y MSI) y de Linux (AppImage y deb) sin firma de actualizaciones, y ejecuta clippy y tests también en Windows. El flujo de Release usa exactamente los mismos comandos más la firma.
+- **Compilación local**: se generaron y firmaron `.deb` y `.AppImage` con la clave de actualizaciones para comprobar la configuración.
+- **CI extra**: se añadió un trabajo de instaladores de prueba al CI (no estaba pedido) para detectar fallos de Windows antes de publicar.
