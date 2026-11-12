@@ -582,7 +582,7 @@ fn crear_medios(app: &AppHandle) -> Option<MediaControls> {
     let hwnd = app
         .get_webview_window("main")
         .and_then(|w| w.hwnd().ok())
-        .map(|h| h.0 as *mut std::ffi::c_void);
+        .map(|h| h.0 as _);
     #[cfg(not(target_os = "windows"))]
     let hwnd = None;
     let mut c = MediaControls::new(PlatformConfig { dbus_name: "omnicaster_music", display_name: "OmniCaster Music", hwnd }).ok()?;
