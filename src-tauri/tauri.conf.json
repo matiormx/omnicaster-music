@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OmniCaster Music",
+  "version": "0.1.0",
+  "identifier": "es.ngradio.omnicaster-music",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      { "label": "main", "title": "OmniCaster Music", "width": 1280, "height": 800, "minWidth": 900, "minHeight": 600, "center": true }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob: cover: http://cover.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis", "msi", "appimage", "deb"],
+    "category": "Music",
+    "shortDescription": "Reproductor de música para bibliotecas Subsonic",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "windows": {
+      "nsis": { "languages": ["Spanish"], "displayLanguageSelector": false, "installMode": "currentUser" },
+      "wix": { "language": "es-ES" }
+    },
+    "linux": { "deb": { "depends": ["libasound2", "libwebkit2gtk-4.1-0"] } }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0QjgzOTc3NDJEN0MxRTMKUldUandkZENkem00Uk05SGRQUFVkdGpLL0N3M2MvQWU1NzhkcG0rUWY3cTZIM1lnMTZvV2pQSTQK",
+      "endpoints": ["https://github.com/matiormx/omnicaster-music/releases/latest/download/latest.json"]
+    }
+  }
+}
