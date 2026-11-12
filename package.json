@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "mock": "node mock-server/server.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check": "tsc --noEmit && vite build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
