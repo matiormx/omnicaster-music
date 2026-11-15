@@ -122,6 +122,24 @@ export function formatoBytes(b: number): string {
 }
 
 let contadorAvisos = 1
+declare const __VERSION__: string
+export const VERSION_APP = typeof __VERSION__ === 'string' ? __VERSION__ : ''
+
+export async function buscarActualizaciones() {
+  aviso('Buscando actualizaciones…')
+  try {
+    const a = await backend.buscarActualizacion()
+    if (a) {
+      poner({ actualizacion: a })
+      aviso(`Hay una versión nueva: ${a.version}`)
+    } else {
+      aviso(`Ya tienes la última versión (${VERSION_APP}).`)
+    }
+  } catch (e) {
+    aviso(`No se pudo comprobar las actualizaciones: ${mensajeError(e)}`, 'error')
+  }
+}
+
 export function aviso(texto: string, tipo: Aviso['tipo'] = 'info') {
   const id = contadorAvisos++
   poner((s) => ({ avisos: [...s.avisos, { id, texto, tipo }] }))

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Caratula, ContextMenu, Icono } from './common'
 import {
-  alternarAleatorio, alternarFavorito, alternarPausa, anterior, atras, aviso, buscar, cerrarSesion, ciclarRepetir, crearLista, formatoTiempo,
-  irA, irACola, navegar, poner, ponerTema, ponerVolumen, quitarDeCola, reordenarCola, siguiente, sincronizar, useApp, type Ruta, type Tema,
+  alternarAleatorio, alternarFavorito, alternarPausa, anterior, atras, aviso, buscar, buscarActualizaciones, cerrarSesion, ciclarRepetir, crearLista, formatoTiempo,
+  irA, irACola, navegar, poner, ponerTema, ponerVolumen, quitarDeCola, reordenarCola, siguiente, sincronizar, useApp, VERSION_APP, type Ruta, type Tema,
 } from '../store'
 
 // ---------------------------------------------------------------- barra lateral
@@ -69,8 +69,10 @@ function Ajustes() {
             </select>
           </label>
           <button className="menu-item" onClick={() => { setAbierto(false); void sincronizar(false) }}>Actualizar biblioteca</button>
+          <button className="menu-item" onClick={() => { setAbierto(false); void buscarActualizaciones() }}>Buscar actualizaciones</button>
           {act && <button className="menu-item" onClick={() => void act.instalar()}>Instalar versión {act.version}</button>}
           <button className="menu-item peligro" onClick={() => { setAbierto(false); void cerrarSesion() }}>Cerrar sesión</button>
+          <p className="cuenta"><small>OmniCaster Music {VERSION_APP}</small></p>
         </div>
       )}
       <button className="enlace-lateral" onClick={() => setAbierto(!abierto)} aria-expanded={abierto}>
