@@ -181,7 +181,7 @@ pub struct ArtistaRef {
 impl Song {
     /// Artista del álbum (no el de la pista): `displayAlbumArtist` o el primero de `albumArtists`.
     pub fn artista_album(&self) -> Option<(String, Option<String>)> {
-        let primero = self.album_artists.as_ref().and_then(|v| v.iter().find(|a| a.name.as_deref().map_or(false, |n| !n.trim().is_empty())));
+        let primero = self.album_artists.as_ref().and_then(|v| v.iter().find(|a| a.name.as_deref().is_some_and(|n| !n.trim().is_empty())));
         let nombre = primero
             .and_then(|a| a.name.clone())
             .or_else(|| self.display_album_artist.clone())
