@@ -164,6 +164,86 @@ pub struct Song {
     #[serde(deserialize_with = "flex_u64")]
     pub size: Option<u64>,
     pub replay_gain: Option<ReplayGain>,
+    /// OpenSubsonic: «artista del álbum» tal como lo muestra el servidor.
+    pub display_album_artist: Option<String>,
+    /// OpenSubsonic: lista de artistas del álbum (el primero es el principal).
+    pub album_artists: Option<Vec<ArtistaRef>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ArtistaRef {
+    #[serde(deserialize_with = "flex_string")]
+    pub id: Option<String>,
+    pub name: Option<String>,
+}
+
+impl Song {
+    /// Artista del álbum (no el de la pista): `displayAlbumArtist` o el primero de `albumArtists`.
+    pub fn artista_album(&self) -> Option<(String, Option<String>)> {
+        let primero = self.album_artists.as_ref().and_then(|v| v.iter().find(|a| a.name.as_deref().map_or(false, |n| !n.trim().is_empty())));
+        let nombre = primero
+            .and_then(|a| a.name.clone())
+            .or_else(|| self.display_album_artist.clone())
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())?;
+        Some((nombre, primero.and_then(|a| a.id.clone())))
+    }
+}
+
+/// Une los álbumes que el servidor ha separado por artista de la pista cuando comparten
+/// nombre y «artista del álbum». Reasigna `album_id` en las canciones y pone el artista del álbum.
+pub fn agrupar_por_artista_album(albumes: &mut Vec<Album>, canciones: &mut [Song]) {
+    use std::collections::HashMap;
+    let mut de_album: HashMap<String, (String, Option<String>)> = HashMap::new();
+    for c in canciones.iter() {
+        if let (Some(id), Some(aa)) = (c.album_id.as_ref(), c.artista_album()) {
+            de_album.entry(id.clone()).or_insert(aa);
+        }
+    }
+    let mut destino: HashMap<(String, String), usize> = HashMap::new();
+    let mut remap: HashMap<String, String> = HashMap::new();
+    let mut salida: Vec<Album> = Vec::with_capacity(albumes.len());
+    for mut a in albumes.drain(..) {
+        let Some(id) = a.id.clone() else { salida.push(a); continue };
+        let Some((nombre_aa, id_aa)) = de_album.get(&id).cloned() else { salida.push(a); continue };
+        a.artist = Some(nombre_aa.clone());
+        if id_aa.is_some() {
+            a.artist_id = id_aa;
+        }
+        let clave = (a.name.clone().unwrap_or_default().trim().to_lowercase(), nombre_aa.to_lowercase());
+        match destino.get(&clave) {
+            Some(&i) => {
+                let d = &mut salida[i];
+                d.song_count = Some(d.song_count.unwrap_or(0) + a.song_count.unwrap_or(0));
+                d.duration = Some(d.duration.unwrap_or(0) + a.duration.unwrap_or(0));
+                if d.cover_art.is_none() {
+                    d.cover_art = a.cover_art.take();
+                }
+                if d.year.is_none() {
+                    d.year = a.year;
+                }
+                if d.genre.is_none() {
+                    d.genre = a.genre.take();
+                }
+                if let Some(destino_id) = d.id.clone() {
+                    remap.insert(id, destino_id);
+                }
+            }
+            None => {
+                destino.insert(clave, salida.len());
+                salida.push(a);
+            }
+        }
+    }
+    *albumes = salida;
+    if !remap.is_empty() {
+        for c in canciones.iter_mut() {
+            if let Some(n) = c.album_id.as_ref().and_then(|i| remap.get(i)) {
+                c.album_id = Some(n.clone());
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -480,6 +560,25 @@ mod tests {
         assert_eq!(r.songs[1].duration, Some(183));
         assert_eq!(r.songs[1].size, Some(1234));
         assert!(r.albums.is_empty() && r.artists.is_empty());
+    }
+
+    #[test]
+    fn agrupa_albumes_por_artista_del_album() {
+        let mk = |id: &str, art: &str| Album { id: Some(id.into()), name: Some("Anexo".into()), artist: Some(art.into()), song_count: Some(1), ..Default::default() };
+        let mut albumes = vec![mk("1", "Any"), mk("2", "Damaris"), mk("3", "Otro")];
+        let cancion = |id: &str, al: &str, aa: Option<&str>| Song {
+            id: Some(id.into()),
+            album_id: Some(al.into()),
+            display_album_artist: aa.map(|x| x.into()),
+            ..Default::default()
+        };
+        let mut canciones = vec![cancion("a", "1", Some("Musiko")), cancion("b", "2", Some("Musiko")), cancion("c", "3", None)];
+        agrupar_por_artista_album(&mut albumes, &mut canciones);
+        assert_eq!(albumes.len(), 2);
+        assert_eq!(albumes[0].artist.as_deref(), Some("Musiko"));
+        assert_eq!(albumes[0].song_count, Some(2));
+        assert_eq!(canciones[1].album_id.as_deref(), Some("1"));
+        assert_eq!(canciones[2].album_id.as_deref(), Some("3"));
     }
 
     #[test]

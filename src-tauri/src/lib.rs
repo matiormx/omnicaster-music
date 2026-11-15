@@ -241,6 +241,8 @@ async fn biblioteca_sincronizar(app: AppHandle) -> Result<db::Biblioteca, String
                 }
             }
         }
+        // Álbumes de varios artistas: se agrupan por «artista del álbum».
+        subsonic::agrupar_por_artista_album(&mut albumes, &mut canciones);
         // Los géneros y las carátulas de las canciones pueden faltar: se heredan del álbum.
         let por_album: std::collections::HashMap<_, _> = albumes.iter().filter_map(|a| a.id.clone().map(|i| (i, a))).collect();
         for s in canciones.iter_mut() {
