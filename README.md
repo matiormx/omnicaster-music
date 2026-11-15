@@ -108,4 +108,4 @@ git tag v0.1.0 && git push origin v0.1.0
 
 ## Pendiente
 
-Consulta [`PENDIENTE.md`](PENDIENTE.md) y las decisiones tomadas en [`DECISIONES.md`](DECISIONES.md).
+Consulta [`PUBLICAR.md`](PUBLICAR.md) para sacar versiones, [`PENDIENTE.md`](PENDIENTE.md) y las decisiones en [`DECISIONES.md`](DECISIONES.md).
