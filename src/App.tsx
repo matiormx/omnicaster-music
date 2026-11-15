@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Conectar } from './components/Conectar'
-import { Actualizacion, Avisos, BarraReproductor, ContextMenu, Lateral, NuevaLista, PanelCola, Reproduciendo } from './components/shell'
+import { Actualizacion, BarraTitulo, Avisos, BarraReproductor, ContextMenu, Lateral, NuevaLista, PanelCola, Reproduciendo } from './components/shell'
 import { alternarPausa, anterior, arrancar, irA, obtener, poner, ponerVolumen, siguiente, useApp } from './store'
 import { Vista } from './views/vistas'
 
@@ -42,10 +42,11 @@ export function App() {
     else document.documentElement.dataset.tema = tema
   }, [tema])
 
-  if (fase === 'cargando') return <div className="cargando" role="status">Cargando…</div>
-  if (fase === 'conexion') return (<><Conectar /><Avisos /></>)
+  if (fase === 'cargando') return <><BarraTitulo /><div className="cargando" role="status">Cargando…</div></>
+  if (fase === 'conexion') return (<><BarraTitulo /><Conectar /><Avisos /></>)
   return (
     <div className={`app${panel ? ' con-panel' : ''}`}>
+      <BarraTitulo />
       <Lateral />
       <main className="contenido" onScroll={() => obtener().menu && poner({ menu: null })}>
         <Actualizacion />

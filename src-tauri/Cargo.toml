@@ -1,6 +1,6 @@
 [package]
 name = "omnicaster-music"
-version = "0.1.2"
+version = "0.1.3"
 description = "Reproductor de música de escritorio para bibliotecas Subsonic/OpenSubsonic"
 authors = ["matiormx"]
 edition = "2021"

@@ -253,3 +253,21 @@ input[type='range'].vol { max-width: 110px; flex: none; width: 110px; }
 @keyframes subir { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media (max-width: 1000px) { .col-album { display: none; } .fila { grid-template-columns: 44px minmax(0, 3fr) minmax(0, 2fr) 64px; } .reproductor { grid-template-columns: 1fr 1.6fr auto; } }
+
+/* ---- enlaces de texto (artista / álbum) y selección múltiple */
+.enlace-texto { color: inherit; font: inherit; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; cursor: pointer; }
+.enlace-texto:hover { text-decoration: underline; color: var(--texto); }
+.tarjeta-principal { display: flex; flex-direction: column; gap: 4px; text-align: left; min-width: 0; width: 100%; }
+.tarjeta-principal .caratula { transition: transform 0.18s ease, box-shadow 0.18s ease; margin-bottom: 4px; }
+.tarjeta:hover .tarjeta-principal .caratula { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25); }
+.lista-canciones { outline: 0; }
+.cuerpo .fila[aria-selected='true'] { background: var(--seleccion); }
+
+/* ---- barra de título propia (ventana sin decoraciones del sistema) */
+html.con-titulo #root { position: absolute; inset: 32px 0 0 0; height: auto; }
+.barra-titulo { position: fixed; top: 0; left: 0; right: 0; height: 32px; z-index: 1000; display: flex; align-items: center; justify-content: space-between; background: var(--lateral); border-bottom: 1px solid var(--linea); color: var(--texto2); user-select: none; }
+.bt-nombre { padding-left: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.2px; flex: 1; height: 100%; display: flex; align-items: center; }
+.bt-botones { display: flex; height: 100%; }
+.bt-botones button { width: 46px; height: 100%; display: grid; place-items: center; color: var(--texto2); border-radius: 0; }
+.bt-botones button:hover { background: var(--hover); color: var(--texto); }
+.bt-botones button.cerrar:hover { background: #e5384f; color: #fff; }

@@ -82,7 +82,7 @@ let estado: Estado = {
   ruta: { t: 'inicio' }, pilaRutas: [], busqueda: '',
   cola: [], indice: -1, actual: null, reproduciendo: false, posicion: 0, duracion: 0, volumen: 0.8, aleatorio: false, repetir: 'no',
   favoritos: [], historial: [], listas: [], sinConexion: {}, descarga: null, carpetaSinConexion: '',
-  panelCola: false, pantallaCompleta: false, tema: 'sistema', avisos: [], menu: null, nuevaLista: null, actualizacion: null,
+  panelCola: true, pantallaCompleta: false, tema: 'sistema', avisos: [], menu: null, nuevaLista: null, actualizacion: null,
 }
 const oyentes = new Set<() => void>()
 
@@ -489,13 +489,13 @@ export async function sincronizar(silencioso = true) {
 }
 
 async function cargarPreferencias() {
-  const [favoritos, historial, listas, tema, vol, alea, rep] = await Promise.all([
+  const [favoritos, historial, listas, tema, vol, alea, rep, cola] = await Promise.all([
     leerJson<string[]>('favoritos', []), leerJson<{ id: string; en: number }[]>('historial', []), leerJson<Lista[]>('listas', []),
-    backend.leer('tema'), backend.leer('volumen'), backend.leer('aleatorio'), backend.leer('repetir'),
+    backend.leer('tema'), backend.leer('volumen'), backend.leer('aleatorio'), backend.leer('repetir'), backend.leer('panelCola'),
   ])
   const volumen = vol ? Math.min(1, Math.max(0, Number(vol))) : 0.8
   poner({
-    favoritos, historial, listas, volumen,
+    favoritos, historial, listas, volumen, panelCola: cola !== 'false',
     tema: (tema === 'claro' || tema === 'oscuro' ? tema : 'sistema') as Tema,
     aleatorio: alea === 'true',
     repetir: (rep === 'cola' || rep === 'una' ? rep : 'no') as Repetir,
@@ -548,6 +548,12 @@ export async function cerrarSesion() {
   void backend.parar()
   await backend.olvidar()
   poner({ fase: 'conexion', cola: [], indice: -1, actual: null, reproduciendo: false, bib: vacia, idx: indexar(vacia), necesitaClave: false })
+}
+
+export function alternarPanelCola() {
+  const v = !estado.panelCola
+  poner({ panelCola: v })
+  void backend.guardar('panelCola', String(v))
 }
 
 export function ponerTema(t: Tema) {

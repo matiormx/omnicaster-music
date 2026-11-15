@@ -63,7 +63,7 @@ test('navegar a un álbum, reproducir y ver la cola', async ({ page }) => {
   await expect.poll(async () => page.locator('.rep-centro .tiempo').first().textContent(), { timeout: 8000 }).not.toBe('0:00')
   await expect(page.getByRole('button', { name: 'Pausa' })).toBeVisible()
 
-  await page.getByRole('button', { name: /Cola/ }).click()
+  // La cola está visible a la derecha por defecto.
   await expect(page.getByRole('complementary', { name: 'A continuación' }).getByRole('listitem')).toHaveCount(5)
   await page.screenshot({ path: `${CAPTURAS}/04-cola.png` })
 
@@ -123,7 +123,7 @@ test('canciones: lista virtualizada, favorito y menú contextual', async ({ page
   await expect(page.getByRole('row')).not.toHaveCount(1) // cabecera + al menos un favorito
 
   // Doble clic reproduce.
-  await page.getByRole('row').nth(1).dblclick()
+  await page.getByRole('row').nth(1).locator('.titulo').dblclick()
   await expect(page.getByTestId('titulo-actual')).toBeVisible()
 })
 
@@ -134,4 +134,33 @@ test('canciones sin pista, año ni carátula no rompen nada', async ({ page }) =
   await page.getByRole('button', { name: /^Álbum Mar Acústico,/ }).click()
   await expect(page.getByRole('heading', { name: 'Mar Acústico' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: /^\d/ })).toHaveCount(5)
+})
+
+test('selección múltiple con Ctrl/Mayús, menú de álbum y enlaces', async ({ page }) => {
+  await conectar(page)
+  // Menú contextual de un álbum: añadir a una lista.
+  await page.getByRole('button', { name: /^Álbum Luz I,/ }).first().click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Añadir a una lista' })).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Añadir a una lista' }).hover()
+  await page.getByRole('menuitem', { name: 'Lista nueva…' }).click()
+  await page.getByLabel('Nombre de la lista').fill('Mezcla')
+  await page.getByRole('button', { name: 'Crear' }).click()
+  await expect(page.getByRole('heading', { name: 'Mezcla', level: 1 })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: /^\d/ })).toHaveCount(5)
+
+  // Selección múltiple: clic, Mayús+clic y Ctrl+clic.
+  const filas = page.getByRole('row').filter({ hasText: /^\d/ })
+  await filas.nth(0).locator('.titulo').click()
+  await filas.nth(2).locator('.titulo').click({ modifiers: ['Shift'] })
+  await expect(page.locator('.fila[aria-selected="true"]')).toHaveCount(3)
+  await filas.nth(4).locator('.titulo').click({ modifiers: ['ControlOrMeta'] })
+  await expect(page.locator('.fila[aria-selected="true"]')).toHaveCount(4)
+  await filas.nth(1).locator('.titulo').click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Reproducir 4 canciones' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // El artista del reproductor lleva a su página.
+  await page.locator('main').getByRole('button', { name: 'Reproducir', exact: true }).click()
+  await page.locator('.rep-pista .enlace-texto').first().click()
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 })

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Caratula, ContextMenu, Icono } from './common'
+import { backend } from '../backend'
+import { Caratula, ContextMenu, EnlaceAlbum, EnlaceArtista, Icono } from './common'
 import {
-  alternarAleatorio, alternarFavorito, alternarPausa, anterior, atras, aviso, buscar, buscarActualizaciones, cerrarSesion, ciclarRepetir, crearLista, formatoTiempo,
+  alternarAleatorio, alternarFavorito, alternarPanelCola, alternarPausa, anterior, atras, aviso, buscar, buscarActualizaciones, cerrarSesion, ciclarRepetir, crearLista, formatoTiempo,
   irA, irACola, navegar, poner, ponerTema, ponerVolumen, quitarDeCola, reordenarCola, siguiente, sincronizar, useApp, VERSION_APP, type Ruta, type Tema,
 } from '../store'
 
@@ -82,6 +83,46 @@ function Ajustes() {
   )
 }
 
+// ---------------------------------------------------------------- barra de título propia
+
+export function BarraTitulo() {
+  const [maximizada, setMaximizada] = useState(false)
+  const nativo = backend.kind === 'tauri'
+  useEffect(() => {
+    document.documentElement.classList.toggle('con-titulo', nativo)
+    if (!nativo) return
+    let quitar = () => {}
+    void (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const w = getCurrentWindow()
+      const leer = () => void w.isMaximized().then(setMaximizada).catch(() => {})
+      leer()
+      quitar = await w.onResized(leer)
+    })().catch(() => {})
+    return () => quitar()
+  }, [nativo])
+  if (!nativo) return null
+  const ventana = async () => (await import('@tauri-apps/api/window')).getCurrentWindow()
+  return (
+    <div className="barra-titulo" data-tauri-drag-region onDoubleClick={() => void ventana().then((w) => w.toggleMaximize())}>
+      <span className="bt-nombre" data-tauri-drag-region>OmniCaster Music</span>
+      <div className="bt-botones" onDoubleClick={(e) => e.stopPropagation()}>
+        <button aria-label="Minimizar" onClick={() => void ventana().then((w) => w.minimize())}>
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" strokeWidth="1.2" /></svg>
+        </button>
+        <button aria-label={maximizada ? 'Restaurar' : 'Maximizar'} onClick={() => void ventana().then((w) => w.toggleMaximize())}>
+          {maximizada
+            ? <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.1"><rect x="2.5" y="4" width="5.5" height="5.5" /><path d="M4 4V2.5h5.5V8H8" /></svg>
+            : <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="2.5" y="2.5" width="7" height="7" /></svg>}
+        </button>
+        <button className="cerrar" aria-label="Cerrar" onClick={() => void ventana().then((w) => w.close())}>
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.2" /></svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- reproductor
 
 export function Progreso({ clase = '' }: { clase?: string }) {
@@ -146,7 +187,7 @@ export function BarraReproductor() {
             </button>
             <div className="textos">
               <span className="titulo" data-testid="titulo-actual">{cancion.titulo}</span>
-              <span className="artista">{cancion.artista} — {cancion.album}</span>
+              <span className="artista"><EnlaceArtista c={cancion} /> — <EnlaceAlbum c={cancion} /></span>
             </div>
             <button className={`btn-icono${fav ? ' on' : ''}`} onClick={() => actual && alternarFavorito(actual)} aria-label={fav ? 'Quitar de favoritos' : 'Marcar como favorito'} aria-pressed={fav}><Icono n={fav ? 'heartFill' : 'heart'} tam={18} /></button>
           </>
@@ -156,7 +197,7 @@ export function BarraReproductor() {
       <div className="rep-derecha">
         <button className="btn-icono" onClick={() => { if (volumen > 0) { previo.current = volumen; ponerVolumen(0) } else ponerVolumen(previo.current) }} aria-label={volumen > 0 ? 'Silenciar' : 'Activar sonido'}><Icono n={volumen > 0 ? 'volume' : 'mute'} tam={18} /></button>
         <input type="range" className="vol" aria-label="Volumen" min={0} max={1} step={0.01} value={volumen} style={{ ['--p' as string]: `${volumen * 100}%` }} onChange={(e) => ponerVolumen(Number(e.target.value))} />
-        <button className={`btn-icono${panel ? ' on' : ''}`} onClick={() => poner({ panelCola: !panel })} aria-label="Cola «A continuación»" aria-pressed={panel}><Icono n="queue" tam={20} /></button>
+        <button className={`btn-icono${panel ? ' on' : ''}`} onClick={alternarPanelCola} aria-label="Cola «A continuación»" aria-pressed={panel}><Icono n="queue" tam={20} /></button>
       </div>
     </footer>
   )
@@ -174,7 +215,7 @@ export function PanelCola({ incrustado = false }: { incrustado?: boolean }) {
   useEffect(() => { refActual.current?.scrollIntoView({ block: 'nearest' }) }, [indice])
   return (
     <aside className={`panel-cola${incrustado ? ' incrustado' : ''}`} aria-label="A continuación">
-      <div className="panel-cab"><h2>A continuación</h2>{!incrustado && <button className="btn-icono" onClick={() => poner({ panelCola: false })} aria-label="Cerrar la cola"><Icono n="close" tam={18} /></button>}</div>
+      <div className="panel-cab"><h2>A continuación</h2>{!incrustado && <button className="btn-icono" onClick={alternarPanelCola} aria-label="Ocultar la cola"><Icono n="close" tam={18} /></button>}</div>
       {!cola.length && <p className="vacio">La cola está vacía.</p>}
       <ul>
         {cola.map((id, i) => {
@@ -192,7 +233,7 @@ export function PanelCola({ incrustado = false }: { incrustado?: boolean }) {
               onDoubleClick={() => irACola(i)}
             >
               <Caratula id={c.caratula} tam={80} texto={c.album} clase="mini" />
-              <div className="textos"><span className="titulo">{c.titulo}</span><span className="artista">{c.artista}</span></div>
+              <div className="textos"><span className="titulo">{c.titulo}</span><span className="artista"><EnlaceArtista c={c} /></span></div>
               <span className="tiempo">{formatoTiempo(c.duracion)}</span>
               {i !== indice && <button className="btn-icono quitar" onClick={() => quitarDeCola(i)} aria-label={`Quitar ${c.titulo} de la cola`}><Icono n="close" tam={14} /></button>}
             </li>
@@ -225,7 +266,7 @@ export function Reproduciendo() {
         <div className="rp-principal">
           <Caratula id={c.caratula} tam={800} texto={c.album} clase="enorme" />
           <div className="rp-titulo">
-            <div><h1>{c.titulo}</h1><p>{c.artista} — {c.album}</p></div>
+            <div><h1>{c.titulo}</h1><p><EnlaceArtista c={c} /> — <EnlaceAlbum c={c} /></p></div>
             <button className={`btn-icono${fav ? ' on' : ''}`} onClick={() => alternarFavorito(c.id)} aria-label={fav ? 'Quitar de favoritos' : 'Marcar como favorito'}><Icono n={fav ? 'heartFill' : 'heart'} tam={24} /></button>
           </div>
           <Progreso clase="grande" />

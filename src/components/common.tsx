@@ -106,6 +106,65 @@ export function menuCancion(c: Cancion, opts: { listaId?: string; ids?: string[]
   return items
 }
 
+/** Menú para varias canciones seleccionadas a la vez. */
+export function menuVarias(ids: string[], listaId?: string): ItemMenu[] {
+  const s = obtener()
+  const items: ItemMenu[] = [
+    { texto: `Reproducir ${ids.length} canciones`, accion: () => reproducirLista(ids, 0) },
+    { texto: 'Reproducir a continuación', accion: () => reproducirADespues(ids) },
+    { texto: 'Añadir a la cola', accion: () => anadirACola(ids) },
+    { separador: true },
+    {
+      texto: 'Añadir a una lista',
+      sub: [
+        ...s.listas.map((l) => ({ texto: l.nombre, accion: () => anadirALista(l.id, ids) })),
+        { texto: 'Lista nueva…', accion: () => poner({ nuevaLista: ids }) },
+      ],
+    },
+    { texto: 'Añadir a favoritos', accion: () => ids.filter((i) => !obtener().favoritos.includes(i)).forEach(alternarFavorito) },
+    { texto: 'Guardar sin conexión', accion: () => void guardarSinConexion(ids) },
+  ]
+  if (listaId) items.push({ separador: true }, { texto: 'Quitar de esta lista', peligro: true, accion: () => ids.forEach((i) => quitarDeLista(listaId, i)) })
+  return items
+}
+
+export function menuAlbum(a: Album): ItemMenu[] {
+  const s = obtener()
+  const ids = (s.idx.deAlbum.get(a.id) ?? []).map((c) => c.id)
+  const items: ItemMenu[] = [
+    { texto: 'Reproducir', accion: () => reproducirLista(ids, 0) },
+    { texto: 'Reproducir a continuación', accion: () => reproducirADespues(ids) },
+    { texto: 'Añadir a la cola', accion: () => anadirACola(ids) },
+    { separador: true },
+    {
+      texto: 'Añadir a una lista',
+      sub: [
+        ...s.listas.map((l) => ({ texto: l.nombre, accion: () => anadirALista(l.id, ids) })),
+        { texto: 'Lista nueva…', accion: () => poner({ nuevaLista: ids }) },
+      ],
+    },
+    { texto: 'Guardar sin conexión', accion: () => void guardarSinConexion(ids) },
+  ]
+  if (a.artistaId) items.splice(4, 0, { texto: 'Ir al artista', accion: () => navegar({ t: 'artista', id: a.artistaId! }) })
+  return items
+}
+
+/** Enlaces de texto al artista y al álbum de una canción. */
+export function irAArtista(c: Cancion) {
+  const alb = c.albumId ? obtener().idx.album.get(c.albumId) : undefined
+  const id = c.artistaId ?? alb?.artistaId
+  if (id) navegar({ t: 'artista', id })
+}
+export function EnlaceArtista({ c, clase = '' }: { c: Cancion; clase?: string }) {
+  const hay = useApp((s) => !!(c.artistaId ?? (c.albumId ? s.idx.album.get(c.albumId)?.artistaId : null)))
+  if (!hay) return <span className={clase}>{c.artista}</span>
+  return <button className={`enlace-texto ${clase}`} onClick={(e) => { e.stopPropagation(); irAArtista(c) }} title={`Ir a ${c.artista}`}>{c.artista}</button>
+}
+export function EnlaceAlbum({ c, clase = '' }: { c: Cancion; clase?: string }) {
+  if (!c.albumId) return <span className={clase}>{c.album}</span>
+  return <button className={`enlace-texto ${clase}`} onClick={(e) => { e.stopPropagation(); navegar({ t: 'album', id: c.albumId! }) }} title={`Ir al álbum ${c.album}`}>{c.album}</button>
+}
+
 export function ContextMenu() {
   const m = useApp((s) => s.menu)
   const ref = useRef<HTMLDivElement>(null)
@@ -164,7 +223,8 @@ export function ListaCanciones({
 }: { canciones: Cancion[]; onReproducir: (i: number) => void; numerar?: boolean; listaId?: string; mostrarAlbum?: boolean }) {
   const cont = useRef<HTMLDivElement>(null)
   const [rango, setRango] = useState({ desde: 0, hasta: 30 })
-  const [sel, setSel] = useState<string | null>(null)
+  const [sel, setSel] = useState<Set<number>>(new Set())
+  const ancla = useRef(0)
   const actual = useApp((s) => s.actual)
   const favoritos = useApp((s) => s.favoritos)
   const sinConexion = useApp((s) => s.sinConexion)
@@ -191,6 +251,32 @@ export function ListaCanciones({
     }
   }, [canciones.length])
 
+  useEffect(() => setSel(new Set()), [canciones])
+
+  const clic = (e: React.MouseEvent, i: number) => {
+    if (e.shiftKey) {
+      const [a, b] = [Math.min(ancla.current, i), Math.max(ancla.current, i)]
+      const n = new Set(e.ctrlKey || e.metaKey ? sel : [])
+      for (let k = a; k <= b; k++) n.add(k)
+      setSel(n)
+    } else if (e.ctrlKey || e.metaKey) {
+      const n = new Set(sel)
+      if (n.has(i)) n.delete(i)
+      else n.add(i)
+      setSel(n)
+      ancla.current = i
+    } else {
+      setSel(new Set([i]))
+      ancla.current = i
+    }
+  }
+  const alTeclado = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault()
+      setSel(new Set(canciones.map((_, k) => k)))
+    } else if (e.key === 'Escape') setSel(new Set())
+  }
+
   const filas = []
   for (let i = rango.desde; i < Math.min(rango.hasta, canciones.length); i++) {
     const c = canciones[i]
@@ -198,12 +284,19 @@ export function ListaCanciones({
     filas.push(
       <div
         key={`${c.id}-${i}`}
-        className={`fila${suena ? ' suena' : ''}${sel === c.id ? ' sel' : ''}${mostrarAlbum ? '' : ' sin-album'}`}
+        className={`fila${suena ? ' suena' : ''}${sel.has(i) ? ' sel' : ''}${mostrarAlbum ? '' : ' sin-album'}`}
         style={{ top: i * ALTO_FILA, height: ALTO_FILA }}
         role="row"
-        onClick={() => setSel(c.id)}
+        aria-selected={sel.has(i)}
+        onClick={(e) => clic(e, i)}
         onDoubleClick={() => onReproducir(i)}
-        onContextMenu={(e) => { e.preventDefault(); setSel(c.id); mostrarMenu(e.clientX, e.clientY, menuCancion(c, { listaId })) }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          let actual = sel
+          if (!sel.has(i)) { actual = new Set([i]); setSel(actual); ancla.current = i }
+          const elegidas = [...actual].sort((x, y) => x - y).map((k) => canciones[k]).filter(Boolean)
+          mostrarMenu(e.clientX, e.clientY, elegidas.length > 1 ? menuVarias(elegidas.map((x) => x.id), listaId) : menuCancion(c, { listaId }))
+        }}
       >
         <div className="col-num">
           {suena ? <Icono n="volume" tam={16} /> : <span className="num">{numerar ? (c.pista ?? i + 1) : i + 1}</span>}
@@ -218,14 +311,14 @@ export function ListaCanciones({
           {favoritos.includes(c.id) && <span className="marca fav" title="Favorito"><Icono n="heartFill" tam={13} /></span>}
           {c.id in sinConexion && <span className="marca" title="Guardada sin conexión"><Icono n="download" tam={13} /></span>}
         </div>
-        <div className="col-artista">{c.artista}</div>
-        {mostrarAlbum && <div className="col-album">{c.album}</div>}
+        <div className="col-artista"><EnlaceArtista c={c} /></div>
+        {mostrarAlbum && <div className="col-album"><EnlaceAlbum c={c} /></div>}
         <div className="col-duracion">{formatoTiempo(c.duracion)}</div>
       </div>,
     )
   }
   return (
-    <div className="lista-canciones" role="table" aria-label="Canciones">
+    <div className="lista-canciones" role="table" aria-label="Canciones" aria-multiselectable="true" tabIndex={0} onKeyDown={alTeclado}>
       <div className={`fila cabecera${mostrarAlbum ? '' : ' sin-album'}`}>
         <div className="col-num">#</div>
         <div className="col-titulo">Título</div>
@@ -243,11 +336,15 @@ export function ListaCanciones({
 
 export function TarjetaAlbum({ a }: { a: Album }) {
   return (
-    <button className="tarjeta" onClick={() => navegar({ t: 'album', id: a.id })} aria-label={`Álbum ${a.nombre}, ${a.artista}`}>
-      <Caratula id={a.caratula} tam={400} texto={a.nombre} />
-      <span className="t-nombre">{a.nombre}</span>
-      <span className="t-sub">{a.artista}</span>
-    </button>
+    <div className="tarjeta" onContextMenu={(e) => { e.preventDefault(); mostrarMenu(e.clientX, e.clientY, menuAlbum(a)) }}>
+      <button className="tarjeta-principal" onClick={() => navegar({ t: 'album', id: a.id })} aria-label={`Álbum ${a.nombre}, ${a.artista}`}>
+        <Caratula id={a.caratula} tam={400} texto={a.nombre} />
+        <span className="t-nombre">{a.nombre}</span>
+      </button>
+      {a.artistaId
+        ? <button className="enlace-texto t-sub" onClick={() => navegar({ t: 'artista', id: a.artistaId! })} title={`Ir a ${a.artista}`}>{a.artista}</button>
+        : <span className="t-sub">{a.artista}</span>}
+    </div>
   )
 }
 
