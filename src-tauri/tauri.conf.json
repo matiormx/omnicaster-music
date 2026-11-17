@@ -33,7 +33,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0QjgzOTc3NDJEN0MxRTMKUldUandkZENkem00Uk05SGRQUFVkdGpLL0N3M2MvQWU1NzhkcG0rUWY3cTZIM1lnMTZvV2pQSTQK",
-      "endpoints": ["https://github.com/matiormx/omnicaster-music/releases/latest/download/latest.json"]
+      "endpoints": ["https://github.com/nges-malaga/omnicaster-music/releases/latest/download/latest.json"]
     }
   }
 }

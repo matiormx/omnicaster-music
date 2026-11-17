@@ -31,7 +31,7 @@ La música **no se descarga**: se escucha en directo desde el servidor. Solo se 
 
 ## Instalar
 
-Descarga el instalador desde la [última Release](https://github.com/matiormx/omnicaster-music/releases/latest):
+Descarga el instalador desde la [última Release](https://github.com/nges-malaga/omnicaster-music/releases/latest):
 
 | Sistema | Archivo |
 |---|---|

@@ -3,7 +3,7 @@
 Registro de las decisiones que se tomaron sin preguntar (trabajo desatendido).
 
 ## Entorno y publicación
-- **Repo**: la sesión no podía crear repositorios (`gh repo create` devolvía 403), así que se trabajó en local y el repo `matiormx/omnicaster-music` lo creó el usuario vacío. Se añadió como remoto y se hizo push de lo local.
+- **Repo**: la sesión no podía crear repositorios (`gh repo create` devolvía 403), así que se trabajó en local y el repo `nges-malaga/omnicaster-music` lo creó el usuario vacío. Se añadió como remoto y se hizo push de lo local.
 - **Servidor real**: `cloud.ngradio.es` no es accesible desde el entorno de desarrollo (lista de dominios permitidos). Todo se probó contra el servidor Subsonic falso (`mock-server/`). La conexión real no se ha podido verificar aquí.
 - **Mensaje de commit**: se usa exactamente `Co-Authored-By: Claude <noreply@anthropic.com>`, como pedía el encargo.
 - **Claves de firma**: el par de claves del actualizador se generó con `tauri signer generate`. La pública está en `tauri.conf.json`. La privada y su contraseña no van al repo; hay que cargarlas como secretos (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`).
