@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { backend } from '../backend'
 import {
   alternarFavorito, anadirACola, anadirALista, formatoTiempo, guardarSinConexion, liberarEspacio, mostrarMenu, navegar,
-  obtener, poner, reproducirADespues, reproducirLista, quitarDeLista, useApp, type ItemMenu,
+  desactivarCanciones, listaEditable, mandarARevision, obtener, poner, reproducirADespues, reproducirLista, quitarDeLista, useApp, type ItemMenu,
 } from '../store'
+import { puede } from '../oc'
 import type { Album, Cancion } from '../types'
 
 // ---------------------------------------------------------------- iconos
@@ -74,6 +75,28 @@ export function Caratula({ id, tam = 300, texto = '', clase = '' }: { id?: strin
 
 // ---------------------------------------------------------------- menús
 
+/** Opciones de gestión según el usuario. No hay ninguna que borre canciones. */
+function itemsGestion(ids: string[]): ItemMenu[] {
+  const rol = obtener().rol
+  if (!puede(rol, 'operator')) return []
+  const r: ItemMenu[] = [
+    { separador: true },
+    { texto: ids.length > 1 ? `Editar datos de ${ids.length} canciones…` : 'Editar datos…', accion: () => poner({ editar: ids }) },
+    { texto: 'Mandar a revisión', accion: () => mandarARevision(ids) },
+  ]
+  if (puede(rol, 'admin')) r.push({ texto: 'Desactivar', accion: () => desactivarCanciones(ids) })
+  return r
+}
+
+/** Listas a las que se puede añadir: las mías y, para operarios y administradores, las de OmniCaster. */
+function destinosLista(ids: string[]): ItemMenu[] {
+  const s = obtener()
+  return [
+    ...s.listas.filter((l) => l.grupo !== 'emision' && listaEditable(l, s.rol)).map((l) => ({ texto: l.nombre, accion: () => anadirALista(l.id, ids) })),
+    { texto: 'Lista nueva…', accion: () => poner({ nuevaLista: ids }) },
+  ]
+}
+
 export function menuCancion(c: Cancion, opts: { listaId?: string; ids?: string[] } = {}): ItemMenu[] {
   const s = obtener()
   const ids = opts.ids ?? [c.id]
@@ -91,18 +114,16 @@ export function menuCancion(c: Cancion, opts: { listaId?: string; ids?: string[]
   items.push(
     { separador: true },
     { texto: fav ? 'Quitar de favoritos' : 'Favorito', accion: () => alternarFavorito(c.id) },
-    {
-      texto: 'Añadir a una lista',
-      sub: [
-        ...s.listas.map((l) => ({ texto: l.nombre, accion: () => anadirALista(l.id, ids) })),
-        { texto: 'Lista nueva…', accion: () => poner({ nuevaLista: ids }) },
-      ],
-    },
+    { texto: 'Añadir a una lista', sub: destinosLista(ids) },
     guardada
       ? { texto: 'Quitar de sin conexión', accion: () => void liberarEspacio(ids) }
       : { texto: 'Guardar sin conexión', accion: () => void guardarSinConexion(ids) },
+    { separador: true },
+    { texto: 'Ficha…', accion: () => poner({ ficha: c.id }) },
   )
-  if (opts.listaId) items.push({ separador: true }, { texto: 'Quitar de esta lista', peligro: true, accion: () => quitarDeLista(opts.listaId!, c.id) })
+  const l = opts.listaId ? s.listas.find((x) => x.id === opts.listaId) : undefined
+  if (l && listaEditable(l, s.rol) && l.grupo !== 'emision') items.push({ texto: 'Quitar de esta lista', peligro: true, accion: () => quitarDeLista(l.id, c.id) })
+  items.push(...itemsGestion(ids))
   return items
 }
 
@@ -114,17 +135,13 @@ export function menuVarias(ids: string[], listaId?: string): ItemMenu[] {
     { texto: 'Reproducir a continuación', accion: () => reproducirADespues(ids) },
     { texto: 'Añadir a la cola', accion: () => anadirACola(ids) },
     { separador: true },
-    {
-      texto: 'Añadir a una lista',
-      sub: [
-        ...s.listas.map((l) => ({ texto: l.nombre, accion: () => anadirALista(l.id, ids) })),
-        { texto: 'Lista nueva…', accion: () => poner({ nuevaLista: ids }) },
-      ],
-    },
+    { texto: 'Añadir a una lista', sub: destinosLista(ids) },
     { texto: 'Añadir a favoritos', accion: () => ids.filter((i) => !obtener().favoritos.includes(i)).forEach(alternarFavorito) },
     { texto: 'Guardar sin conexión', accion: () => void guardarSinConexion(ids) },
   ]
-  if (listaId) items.push({ separador: true }, { texto: 'Quitar de esta lista', peligro: true, accion: () => ids.forEach((i) => quitarDeLista(listaId, i)) })
+  const l = listaId ? s.listas.find((x) => x.id === listaId) : undefined
+  if (l && listaEditable(l, s.rol) && l.grupo !== 'emision') items.push({ separador: true }, { texto: 'Quitar de esta lista', peligro: true, accion: () => ids.forEach((i) => quitarDeLista(l.id, i)) })
+  items.push(...itemsGestion(ids))
   return items
 }
 
@@ -136,16 +153,11 @@ export function menuAlbum(a: Album): ItemMenu[] {
     { texto: 'Reproducir a continuación', accion: () => reproducirADespues(ids) },
     { texto: 'Añadir a la cola', accion: () => anadirACola(ids) },
     { separador: true },
-    {
-      texto: 'Añadir a una lista',
-      sub: [
-        ...s.listas.map((l) => ({ texto: l.nombre, accion: () => anadirALista(l.id, ids) })),
-        { texto: 'Lista nueva…', accion: () => poner({ nuevaLista: ids }) },
-      ],
-    },
+    { texto: 'Añadir a una lista', sub: destinosLista(ids) },
     { texto: 'Guardar sin conexión', accion: () => void guardarSinConexion(ids) },
   ]
   if (a.artistaId) items.splice(4, 0, { texto: 'Ir al artista', accion: () => navegar({ t: 'artista', id: a.artistaId! }) })
+  items.push(...itemsGestion(ids))
   return items
 }
 
@@ -177,16 +189,19 @@ export function ContextMenu() {
   useEffect(() => {
     if (!m) return
     const cerrar = () => poner({ menu: null })
+    // Un desplazamiento justo al abrir (p. ej. al ajustar la vista) no debe cerrar el menú.
+    const abierto = Date.now()
+    const alDesplazar = () => { if (Date.now() - abierto > 400) cerrar() }
     const tecla = (e: KeyboardEvent) => e.key === 'Escape' && cerrar()
     window.addEventListener('click', cerrar)
     window.addEventListener('blur', cerrar)
     window.addEventListener('keydown', tecla)
-    window.addEventListener('scroll', cerrar, true)
+    window.addEventListener('scroll', alDesplazar, true)
     return () => {
       window.removeEventListener('click', cerrar)
       window.removeEventListener('blur', cerrar)
       window.removeEventListener('keydown', tecla)
-      window.removeEventListener('scroll', cerrar, true)
+      window.removeEventListener('scroll', alDesplazar, true)
     }
   }, [m])
   if (!m) return null

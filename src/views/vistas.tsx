@@ -4,10 +4,11 @@ import {
   BotonesReproducir, Cabecera, Caratula, fondoGenerado, Icono, ListaCanciones, RejillaAlbumes, Seccion, TarjetaAlbum,
 } from '../components/common'
 import {
-  aviso, borrarLista, formatoBytes, formatoDuracionTotal, guardarSinConexion, liberarEspacio, navegar, normalizar,
+  aviso, borrarLista, desactivarCanciones, formatoBytes, formatoDuracionTotal, guardarSinConexion, liberarEspacio, listaBorrable, mandarARevision, navegar, normalizar,
   poner, refrescarSinConexion, reproducirLista, useApp, type Ruta,
 } from '../store'
-import type { Album, Cancion } from '../types'
+import { aCancion, oc } from '../oc'
+import type { Album, Cancion, Lista } from '../types'
 
 const semilla = Math.random()
 function aleatorioEstable<T>(a: T[], n: number): T[] {
@@ -203,46 +204,100 @@ export function PaginaGenero({ nombre }: { nombre: string }) {
   )
 }
 
-export function Listas() {
-  const listas = useApp((s) => s.listas)
+function TarjetasListas({ listas }: { listas: Lista[] }) {
   const idx = useApp((s) => s.idx)
   return (
+    <div className="rejilla">
+      {listas.map((l) => {
+        const primera = l.canciones.map((i) => idx.cancion.get(i)).find((c) => c?.caratula)
+        return (
+          <button key={l.id} className="tarjeta" onClick={() => navegar({ t: 'lista', id: l.id })} aria-label={`Lista ${l.nombre}`}>
+            <Caratula id={primera?.caratula} tam={400} texto={l.nombre} />
+            <span className="t-nombre">{l.nombre}</span>
+            <span className="t-sub">{l.canciones.length} canciones</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Listas() {
+  const listas = useApp((s) => s.listas)
+  const normales = listas.filter((l) => l.grupo !== 'emision')
+  const emision = listas.filter((l) => l.grupo === 'emision')
+  return (
     <>
-      <Cabecera titulo="Listas" sub={`${listas.length} listas`}>
+      <Cabecera titulo="Listas" sub={`${normales.length} listas · ${emision.length} de emisión`}>
         <button className="boton principal" onClick={() => poner({ nuevaLista: [] })}><Icono n="plus" tam={18} /> Lista nueva</button>
       </Cabecera>
-      <div className="rejilla">
-        {listas.map((l) => {
-          const primera = l.canciones.map((i) => idx.cancion.get(i)).find((c) => c?.caratula)
-          return (
-            <button key={l.id} className="tarjeta" onClick={() => navegar({ t: 'lista', id: l.id })} aria-label={`Lista ${l.nombre}`}>
-              <Caratula id={primera?.caratula} tam={400} texto={l.nombre} />
-              <span className="t-nombre">{l.nombre}</span>
-              <span className="t-sub">{l.canciones.length} canciones</span>
-            </button>
-          )
-        })}
-        {!listas.length && <p className="vacio">Aún no hay listas. Crea una o añade canciones desde el menú contextual.</p>}
-      </div>
+      <section className="grupo-listas" aria-label="Listas">
+        <h2>Listas</h2>
+        <TarjetasListas listas={normales} />
+        {!normales.length && <p className="vacio">Aún no hay listas. Crea una o añade canciones desde el menú contextual.</p>}
+      </section>
+      {emision.length > 0 && (
+        <section className="grupo-listas" aria-label="Emisión">
+          <h2>Emisión</h2>
+          <p className="insignia">Las listas que usa la emisora al aire. Solo se pueden escuchar.</p>
+          <TarjetasListas listas={emision} />
+        </section>
+      )}
     </>
   )
 }
 
 export function PaginaLista({ id }: { id: string }) {
   const lista = useApp((s) => s.listas.find((l) => l.id === id))
+  const rol = useApp((s) => s.rol)
   const idx = useApp((s) => s.idx)
   const canciones = useMemo(() => (lista?.canciones ?? []).map((i) => idx.cancion.get(i)).filter((c): c is Cancion => !!c), [lista, idx])
   if (!lista) return <p className="vacio">La lista ya no existe.</p>
   const ids = canciones.map((c) => c.id)
+  const borrable = listaBorrable(lista, rol) && lista.grupo !== 'emision'
   return (
     <>
-      <Cabecera titulo={lista.nombre} sub={`${canciones.length} canciones · ${formatoDuracionTotal(canciones.reduce((t, c) => t + c.duracion, 0))}`}>
+      <Cabecera titulo={lista.nombre} sub={`${lista.grupo === 'emision' ? 'Emisión · solo lectura · ' : ''}${canciones.length} canciones · ${formatoDuracionTotal(canciones.reduce((t, c) => t + c.duracion, 0))}`}>
         <BotonesReproducir ids={ids} onGuardar={() => void guardarSinConexion(ids)} />
-        <button className="boton peligro" onClick={() => { borrarLista(lista.id); navegar({ t: 'listas' }) }}><Icono n="trash" tam={18} /> Eliminar</button>
+        {borrable && (
+          <button className="boton peligro" onClick={() => {
+            const aviso_ = lista.servidorId ? `¿Eliminar la lista «${lista.nombre}»? Va a la papelera de la nube (30 días); las canciones no se borran.` : `¿Eliminar la lista «${lista.nombre}»?`
+            if (!window.confirm(aviso_)) return
+            borrarLista(lista.id); navegar({ t: 'listas' })
+          }}><Icono n="trash" tam={18} /> Eliminar lista</button>
+        )}
       </Cabecera>
       <ListaCanciones canciones={canciones} listaId={lista.id} onReproducir={(i) => reproducirLista(ids, i)} />
     </>
   )
+}
+
+/** Canciones que la nube devuelve aparte de la biblioteca normal (para revisar o desactivadas). */
+function CancionesDeMantenimiento({ filtro, titulo, vacio, accion }: { filtro: 'review' | 'disabled'; titulo: string; vacio: string; accion: (ids: string[]) => void }) {
+  const [canciones, setCanciones] = useState<Cancion[] | null>(null)
+  const [error, setError] = useState('')
+  const cargar = () => oc('ocListSongs', { filter: filtro }).then((b) => setCanciones((b.song ?? []).map(aCancion))).catch((e) => setError(String(e?.message ?? e)))
+  useEffect(() => { void cargar() /* eslint-disable-next-line */ }, [filtro])
+  const ids = (canciones ?? []).map((c) => c.id)
+  return (
+    <>
+      <Cabecera titulo={titulo} sub={canciones ? `${canciones.length} canciones` : ''}>
+        {filtro === 'disabled'
+          ? <button className="boton" disabled={!ids.length} onClick={() => { accion(ids); setTimeout(() => void cargar(), 800) }}>Activar todas</button>
+          : <button className="boton" disabled={!ids.length} onClick={() => { accion(ids); setTimeout(() => void cargar(), 800) }}>Quitar la marca a todas</button>}
+      </Cabecera>
+      {error && <p className="error">{error}</p>}
+      {canciones && !canciones.length && <p className="vacio">{vacio}</p>}
+      {canciones && canciones.length > 0 && <ListaCanciones canciones={canciones} onReproducir={() => {}} />}
+    </>
+  )
+}
+
+export function Revision() {
+  return <CancionesDeMantenimiento filtro="review" titulo="Para revisar" vacio="No hay canciones marcadas para revisar." accion={(ids) => mandarARevision(ids, false)} />
+}
+export function Desactivadas() {
+  return <CancionesDeMantenimiento filtro="disabled" titulo="Desactivadas" vacio="No hay canciones desactivadas." accion={(ids) => desactivarCanciones(ids, false)} />
 }
 
 export function Favoritos() {
@@ -377,6 +432,8 @@ export function Vista({ ruta }: { ruta: Ruta }) {
     case 'canciones': return <Canciones />
     case 'generos': return <Generos />
     case 'listas': return <Listas />
+    case 'revision': return <Revision />
+    case 'desactivadas': return <Desactivadas />
     case 'favoritos': return <Favoritos />
     case 'sinconexion': return <SinConexion />
     case 'busqueda': return <Busqueda />

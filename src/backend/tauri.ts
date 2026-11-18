@@ -48,6 +48,15 @@ export const backendTauri: Backend = {
     const r = await open({ directory: true, multiple: false, title: 'Carpeta para la música sin conexión' })
     return typeof r === 'string' ? r : null
   },
+  llamarOc: (metodo, params, cuerpo) => invoke('servidor_oc', { metodo, params, cuerpo: cuerpo ?? null }),
+  elegirArchivos: async () => {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const exts: string[] = await invoke('extensiones_audio')
+    const r = await open({ multiple: true, directory: false, title: 'Canciones para subir', filters: [{ name: 'Audio', extensions: exts }] })
+    return Array.isArray(r) ? r : typeof r === 'string' ? [r] : []
+  },
+  subir: (rutas, bloque) => invoke('subir_archivos', { rutas, bloque: bloque ?? null }),
+  onSubida: (cb) => escuchar('subida-progreso', cb),
   buscarActualizacion: async () => {
     const { check } = await import('@tauri-apps/plugin-updater')
     const u = await check()

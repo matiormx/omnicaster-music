@@ -1,11 +1,13 @@
 // Estado global de la aplicación y lógica del reproductor (cola, historial, favoritos, listas…).
 import { useSyncExternalStore } from 'react'
 import { backend } from './backend'
-import type { Album, Biblioteca, Cancion, ControlMedios, EventoAudio, Lista, PistaPeticion } from './types'
+import { ErrorOc, LIMITE_MASIVO, oc, puede, rolDelUsuario } from './oc'
+import type { Album, Biblioteca, Cancion, ControlMedios, EventoAudio, Lista, PistaPeticion, ProgresoSubida, ResultadoSubida, Rol } from './types'
 
 export type Ruta =
   | { t: 'inicio' } | { t: 'explorar' } | { t: 'radio' } | { t: 'artistas' } | { t: 'albumes' } | { t: 'canciones' }
   | { t: 'generos' } | { t: 'listas' } | { t: 'favoritos' } | { t: 'sinconexion' } | { t: 'busqueda' }
+  | { t: 'revision' } | { t: 'desactivadas' }
   | { t: 'album'; id: string } | { t: 'artista'; id: string } | { t: 'genero'; id: string } | { t: 'lista'; id: string }
 
 export type Repetir = 'no' | 'cola' | 'una'
@@ -53,6 +55,15 @@ export interface Estado {
   avisos: Aviso[]
   menu: { x: number; y: number; items: ItemMenu[] } | null
   nuevaLista: string[] | null
+  /** Permisos de este usuario en la nube (los comprueba el servidor en cada llamada) */
+  rol: Rol
+  /** Ficha de una canción abierta */
+  ficha: string | null
+  /** Canciones que se están editando */
+  editar: string[] | null
+  /** Cambio masivo (más de 10) pendiente de confirmar de forma explícita */
+  confirmacion: { texto: string; n: number; ejecutar: (confirm: number) => Promise<void> } | null
+  subida: { progreso: ProgresoSubida | null; resultado: ResultadoSubida | null; activa: boolean } | null
   actualizacion: { version: string; instalar: () => Promise<void> } | null
 }
 
@@ -82,7 +93,7 @@ let estado: Estado = {
   ruta: { t: 'inicio' }, pilaRutas: [], busqueda: '',
   cola: [], indice: -1, actual: null, reproduciendo: false, posicion: 0, duracion: 0, volumen: 0.8, aleatorio: false, repetir: 'no',
   favoritos: [], historial: [], listas: [], sinConexion: {}, descarga: null, carpetaSinConexion: '',
-  panelCola: true, pantallaCompleta: false, tema: 'sistema', avisos: [], menu: null, nuevaLista: null, actualizacion: null,
+  panelCola: true, pantallaCompleta: false, tema: 'sistema', avisos: [], menu: null, nuevaLista: null, rol: 'listener', ficha: null, editar: null, confirmacion: null, subida: null, actualizacion: null,
 }
 const oyentes = new Set<() => void>()
 
@@ -401,22 +412,67 @@ export function alternarFavorito(id: string) {
 }
 
 export function crearLista(nombre: string, canciones: string[] = []): Lista {
-  const l: Lista = { id: `l-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, nombre: nombre.trim() || 'Lista nueva', canciones }
+  const l: Lista = { id: `l-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, nombre: nombre.trim() || 'Lista nueva', canciones, grupo: 'lista' }
   poner((s) => ({ listas: [...s.listas, l] }))
   void guardarJson('listas', estado.listas)
   return l
 }
+
+/** Las listas de OmniCaster («bl-») las pueden cambiar operarios y administradores. Las de emisión («pl-») son de solo lectura. */
+export const esListaServidor = (l: Lista) => !!l.servidorId
+export const listaEditable = (l: Lista, rol: Rol = estado.rol) => !l.servidorId || (l.servidorId.startsWith('bl-') && puede(rol, 'operator'))
+export const listaBorrable = (l: Lista, rol: Rol = estado.rol) => !l.servidorId || (l.servidorId.startsWith('bl-') && puede(rol, 'admin'))
+
+export async function crearListaServidor(nombre: string, ids: string[]): Promise<Lista | null> {
+  try {
+    const b = await oc('createPlaylist', { name: nombre.trim(), songId: ids })
+    await refrescarListasServidor()
+    const id = b.playlist?.id ? `s-${b.playlist.id}` : null
+    return estado.listas.find((l) => l.id === id) ?? null
+  } catch (e) { aviso(mensajeError(e), 'error'); return null }
+}
+
 export function anadirALista(listaId: string, ids: string[]) {
-  poner((s) => ({ listas: s.listas.map((l) => (l.id === listaId ? { ...l, canciones: [...l.canciones, ...ids.filter((i) => !l.canciones.includes(i))] } : l)) }))
+  const l = estado.listas.find((x) => x.id === listaId)
+  if (!l) return
+  if (l.servidorId) {
+    const nuevas = ids.filter((i) => !l.canciones.includes(i))
+    if (!nuevas.length) return aviso('Ya estaban en la lista')
+    oc('updatePlaylist', { playlistId: l.servidorId, songIdToAdd: nuevas })
+      .then(() => { aviso('Añadida a la lista'); return refrescarListasServidor() })
+      .catch((e) => aviso(mensajeError(e), 'error'))
+    return
+  }
+  poner((s) => ({ listas: s.listas.map((x) => (x.id === listaId ? { ...x, canciones: [...x.canciones, ...ids.filter((i) => !x.canciones.includes(i))] } : x)) }))
   void guardarJson('listas', estado.listas)
   aviso('Añadida a la lista')
 }
 export function quitarDeLista(listaId: string, id: string) {
-  poner((s) => ({ listas: s.listas.map((l) => (l.id === listaId ? { ...l, canciones: l.canciones.filter((i) => i !== id) } : l)) }))
+  const l = estado.listas.find((x) => x.id === listaId)
+  if (!l) return
+  if (l.servidorId) {
+    // La posición es la de la lista tal como la devuelve el servidor
+    const pos = l.canciones.map((c, i) => (c === id ? i : -1)).filter((i) => i >= 0)
+    if (!pos.length) return
+    oc('updatePlaylist', { playlistId: l.servidorId, songIndexToRemove: pos })
+      .then(() => refrescarListasServidor())
+      .catch((e) => aviso(mensajeError(e), 'error'))
+    return
+  }
+  poner((s) => ({ listas: s.listas.map((x) => (x.id === listaId ? { ...x, canciones: x.canciones.filter((i) => i !== id) } : x)) }))
   void guardarJson('listas', estado.listas)
 }
+/** Quita la lista (no las canciones). En el servidor solo un administrador, y va a la papelera de la nube. */
 export function borrarLista(listaId: string) {
-  poner((s) => ({ listas: s.listas.filter((l) => l.id !== listaId) }))
+  const l = estado.listas.find((x) => x.id === listaId)
+  if (!l) return
+  if (l.servidorId) {
+    oc('deletePlaylist', { id: l.servidorId })
+      .then(() => { aviso('Lista enviada a la papelera de la nube (30 días)'); return refrescarListasServidor() })
+      .catch((e) => aviso(mensajeError(e), 'error'))
+    return
+  }
+  poner((s) => ({ listas: s.listas.filter((x) => x.id !== listaId) }))
   void guardarJson('listas', estado.listas)
 }
 
@@ -457,6 +513,19 @@ function aplicarBiblioteca(b: Biblioteca) {
   poner({ bib: b, idx: indexar(b) })
 }
 
+/** Las listas del servidor se vuelven a leer siempre (no son una copia): «Listas» (OmniCaster) y «Emisión». */
+export async function refrescarListasServidor() {
+  try {
+    const remotas = await backend.listasServidor()
+    const nuevas: Lista[] = remotas.map((l) => {
+      const emision = l.id.startsWith('pl-')
+      return { id: `s-${l.id}`, servidorId: l.id, nombre: emision ? l.nombre.replace(/^Emisión\s*[·:-]\s*/i, '') : l.nombre, canciones: l.canciones, grupo: emision ? 'emision' : 'lista' } as Lista
+    })
+    poner((s) => ({ listas: [...s.listas.filter((l) => !l.servidorId && l.id.startsWith('l-')), ...nuevas].map((l) => (l.grupo ? l : { ...l, grupo: 'lista' })) }))
+    void guardarJson('listas', estado.listas.filter((l) => !l.servidorId))
+  } catch { /* el servidor puede no admitirlo */ }
+}
+
 async function importarServidor() {
   try {
     const favs = await backend.favoritosServidor()
@@ -464,13 +533,8 @@ async function importarServidor() {
       poner((s) => ({ favoritos: [...s.favoritos, ...favs.filter((f) => !s.favoritos.includes(f) && s.idx.cancion.has(f))] }))
       void guardarJson('favoritos', estado.favoritos)
     }
-    const listas = await backend.listasServidor()
-    const nuevas = listas.filter((l) => !estado.listas.some((x) => x.servidorId === l.id))
-    if (nuevas.length) {
-      poner((s) => ({ listas: [...s.listas, ...nuevas.map((l) => ({ id: `s-${l.id}`, nombre: l.nombre, canciones: l.canciones, servidorId: l.id }))] }))
-      void guardarJson('listas', estado.listas)
-    }
   } catch { /* el servidor puede no admitirlo */ }
+  await refrescarListasServidor()
 }
 
 export async function sincronizar(silencioso = true) {
@@ -495,7 +559,7 @@ async function cargarPreferencias() {
   ])
   const volumen = vol ? Math.min(1, Math.max(0, Number(vol))) : 0.8
   poner({
-    favoritos, historial, listas, volumen, panelCola: cola !== 'false',
+    favoritos, historial, listas: listas.filter((l) => !l.servidorId && !l.id.startsWith('s-')), volumen, panelCola: cola !== 'false',
     tema: (tema === 'claro' || tema === 'oscuro' ? tema : 'sistema') as Tema,
     aleatorio: alea === 'true',
     repetir: (rep === 'cola' || rep === 'una' ? rep : 'no') as Repetir,
@@ -524,6 +588,7 @@ export async function arrancar() {
     aplicarBiblioteca(b)
     poner({ fase: 'lista' })
     void refrescarSinConexion()
+    void cargarRol()
     void backend.sinConexionCarpeta().then((carpetaSinConexion) => poner({ carpetaSinConexion })).catch(() => {})
     void sincronizar()
     void backend.buscarActualizacion().then((a) => a && poner({ actualizacion: a })).catch(() => {})
@@ -539,6 +604,7 @@ export async function conectar(servidor: string, usuario: string, clave: string)
   aplicarBiblioteca(b)
   poner({ servidor, usuario, necesitaClave: false, fase: 'lista', ruta: { t: 'inicio' }, pilaRutas: [] })
   void refrescarSinConexion()
+  void cargarRol()
   void backend.sinConexionCarpeta().then((carpetaSinConexion) => poner({ carpetaSinConexion })).catch(() => {})
   void sincronizar()
   return aviso_
@@ -547,7 +613,7 @@ export async function conectar(servidor: string, usuario: string, clave: string)
 export async function cerrarSesion() {
   void backend.parar()
   await backend.olvidar()
-  poner({ fase: 'conexion', cola: [], indice: -1, actual: null, reproduciendo: false, bib: vacia, idx: indexar(vacia), necesitaClave: false })
+  poner({ fase: 'conexion', cola: [], indice: -1, actual: null, reproduciendo: false, bib: vacia, idx: indexar(vacia), necesitaClave: false, rol: 'listener' })
 }
 
 export function alternarPanelCola() {
@@ -567,3 +633,99 @@ export function mostrarMenu(x: number, y: number, items: ItemMenu[]) {
 
 /** Texto de apoyo de una canción en listas: «Artista — Álbum». */
 export const resumenCancion = (c: Cancion) => `${c.artista} — ${c.album}`
+
+
+// ---------------------------------------------------------------- gestión de la biblioteca
+// Nunca se borran canciones desde aquí: solo se editan sus datos, se mandan a revisión o
+// (administradores) se desactivan. El borrado real se hace desde OmniCaster en el escritorio.
+
+async function cargarRol() {
+  poner({ rol: await rolDelUsuario(estado.usuario) })
+}
+
+export interface Cambios {
+  set?: Record<string, unknown>
+  addTags?: string[]
+  removeTags?: string[]
+  review?: boolean
+}
+
+/** Ejecuta un cambio sobre varias canciones. Si son más de 10 pide confirmación explícita antes. */
+export function conConfirmacion(texto: string, n: number, ejecutar: (confirm: number) => Promise<void>): Promise<void> | void {
+  if (n > LIMITE_MASIVO) poner({ confirmacion: { texto, n, ejecutar } })
+  else return ejecutar(0)
+}
+
+async function tras(ids: string[], songs: any[] | undefined) {
+  // Actualiza lo que se ve ya; el resto llega con la siguiente sincronización.
+  if (songs?.length) {
+    const nuevas = new Map(songs.map((x) => [String(x.id), x]))
+    const bib = estado.bib
+    const canciones = bib.canciones.map((c) => {
+      const x = nuevas.get(c.id)
+      return x ? { ...c, titulo: x.title ?? c.titulo, artista: x.artist ?? c.artista, album: x.album ?? c.album, anio: x.year ? Number(x.year) : null, genero: x.genre ?? null } : c
+    })
+    aplicarBiblioteca({ ...bib, canciones })
+  }
+  void sincronizar()
+  void ids
+}
+
+export function editarCanciones(ids: string[], cambios: Cambios, confirmar = true) {
+  const ejecutar = async (confirm: number) => {
+    const r = await oc('ocEditSongs', {}, { ids, ...cambios, confirm: confirm || undefined })
+    aviso(r.changed ? `${r.changed} ${r.changed === 1 ? 'canción cambiada' : 'canciones cambiadas'}` : 'No había nada que cambiar')
+    await tras(ids, r.song)
+  }
+  if (!confirmar) return ejecutar(0)
+  return conConfirmacion(`Vas a cambiar los datos de ${ids.length} canciones a la vez.`, ids.length, ejecutar)
+}
+
+export function mandarARevision(ids: string[], marcar = true) {
+  void conConfirmacion(`Vas a ${marcar ? 'mandar a revisión' : 'quitar de revisión'} ${ids.length} canciones.`, ids.length, async (confirm) => {
+    const r = await oc('ocEditSongs', {}, { ids, review: marcar, confirm: confirm || undefined })
+    aviso(marcar ? `${r.changed} a revisión` : `${r.changed} fuera de revisión`)
+    await tras(ids, r.song)
+  })
+}
+
+/** Solo administradores. Una canción desactivada deja de salir en la biblioteca, pero sigue en la nube. */
+export function desactivarCanciones(ids: string[], desactivar = true) {
+  void conConfirmacion(`Vas a ${desactivar ? 'desactivar' : 'activar'} ${ids.length} canciones.`, ids.length, async (confirm) => {
+    const r = await oc('ocSetDisabled', {}, { ids, disabled: desactivar, confirm: confirm || undefined })
+    aviso(desactivar ? `${r.changed} desactivadas` : `${r.changed} activadas`)
+    await tras(ids, undefined)
+  })
+}
+
+export async function deshacerCambio(n: number) {
+  try {
+    await oc('ocUndo', { n })
+    aviso('Cambio deshecho')
+    void sincronizar()
+  } catch (e) { aviso(mensajeError(e), 'error') }
+}
+
+// ---- subida (igual que la web de OmniCaster: por huella; si ya está en la nube solo crea la ficha)
+
+let ofSubida: (() => void) | null = null
+
+export async function subirCanciones(rutas?: string[], bloque?: string) {
+  try {
+    const elegidas = rutas ?? (await backend.elegirArchivos())
+    if (!elegidas.length) return
+    ofSubida?.()
+    ofSubida = backend.onSubida((p) => poner((s) => ({ subida: { progreso: p, resultado: s.subida?.resultado ?? null, activa: p.fase !== 'hecho' } })))
+    poner({ subida: { progreso: null, resultado: null, activa: true } })
+    const r = await backend.subir(elegidas, bloque)
+    poner({ subida: { progreso: null, resultado: r, activa: false } })
+    void sincronizar()
+  } catch (e) {
+    poner({ subida: null })
+    aviso(mensajeError(e), 'error')
+  } finally {
+    ofSubida?.(); ofSubida = null
+  }
+}
+
+export { ErrorOc }

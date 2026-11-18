@@ -6,14 +6,15 @@ const SERVIDOR = 'http://127.0.0.1:4533'
 const CAPTURAS = 'docs/capturas'
 mkdirSync(CAPTURAS, { recursive: true })
 
-async function conectar(page: Page) {
+async function conectar(page: Page, usuario = 'demo') {
   await page.goto('/')
   await page.getByLabel('Servidor').fill(SERVIDOR)
-  await page.getByLabel('Usuario').fill('demo')
+  await page.getByLabel('Usuario').fill(usuario)
   await page.getByLabel('Contraseña').fill('demo')
   await page.getByRole('button', { name: 'Conectar' }).click()
   await expect(page.getByRole('heading', { name: 'Escuchar ahora' })).toBeVisible()
   await expect(page.getByText('50 canciones')).toBeVisible()
+  await expect(page.locator('.sync')).toHaveCount(0) // la sincronización (listas, permisos) ha terminado
 }
 
 test.beforeEach(async ({ context }) => {
@@ -163,4 +164,94 @@ test('selección múltiple con Ctrl/Mayús, menú de álbum y enlaces', async ({
   await page.locator('main').getByRole('button', { name: 'Reproducir', exact: true }).click()
   await page.locator('.rep-pista .enlace-texto').first().click()
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+})
+
+
+// ---------------------------------------------------------------- gestión de la biblioteca
+
+test('oyente: sin opciones de gestión y listas separadas en «Listas» y «Emisión»', async ({ page }) => {
+  await conectar(page)
+  await expect(page.getByRole('heading', { name: 'Gestión' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Canciones' }).first().click()
+  await page.getByRole('row').nth(1).click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Ficha…' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Editar datos…' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'Mandar a revisión' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'Desactivar' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Listas' }).click()
+  await expect(page.getByRole('region', { name: 'Listas' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Emisión' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Emisión' }).getByText('Mezcla de ejemplo')).toBeVisible()
+  // Una lista de emisión es de solo lectura: no se puede eliminar.
+  await page.getByRole('button', { name: 'Lista Mezcla de ejemplo' }).click()
+  await expect(page.getByText('Emisión · solo lectura')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Eliminar lista/ })).toHaveCount(0)
+})
+
+test('ficha: energía ●●●○○, mood y temas', async ({ page }) => {
+  await conectar(page)
+  await page.getByRole('button', { name: 'Canciones' }).first().click()
+  await page.getByRole('row').nth(1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Ficha…' }).click()
+  const d = page.getByRole('dialog', { name: 'Ficha de la canción' })
+  await expect(d.getByText('●●●○○')).toBeVisible()
+  await expect(d.getByText('alegre')).toBeVisible()
+  await expect(d.getByText('verano, playa')).toBeVisible()
+})
+
+test('operario: edita datos y manda a revisión; nunca puede borrar ni desactivar', async ({ page }) => {
+  await conectar(page, 'operario')
+  await expect(page.getByRole('heading', { name: 'Gestión' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Desactivadas' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Canciones' }).first().click()
+  await page.getByRole('row').nth(1).click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Desactivar' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: /Borrar|Eliminar/ })).toHaveCount(0)
+  await page.getByRole('menuitem', { name: 'Editar datos…' }).click()
+  const d = page.getByRole('dialog', { name: 'Editar datos' })
+  await d.getByLabel('Mood').fill('tranquilo')
+  await d.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByText('1 canción cambiada')).toBeVisible()
+  await page.getByRole('row').nth(1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Mandar a revisión' }).click()
+  await page.getByRole('button', { name: 'Para revisar' }).click()
+  await expect(page.getByRole('heading', { name: 'Para revisar', level: 1 })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: /^\d/ })).toHaveCount(1)
+})
+
+test('cambio masivo de más de 10 canciones pide confirmación explícita', async ({ page }) => {
+  await conectar(page, 'operario')
+  await page.getByRole('button', { name: 'Canciones' }).first().click()
+  const filas = page.getByRole('row').filter({ hasText: /^\d/ })
+  await filas.nth(0).locator('.titulo').click()
+  await filas.nth(11).locator('.titulo').click({ modifiers: ['Shift'] })
+  await filas.nth(5).locator('.titulo').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Mandar a revisión' }).click()
+  const d = page.getByRole('dialog', { name: 'Cambio masivo' })
+  await expect(d).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Aplicar' })).toBeDisabled()
+  await d.getByLabel(/confirmo el cambio de 12 canciones/).check()
+  await d.getByRole('button', { name: 'Aplicar' }).click()
+  await expect(page.getByText('12 a revisión')).toBeVisible()
+})
+
+test('operario: añade una canción a una lista de OmniCaster; el administrador puede desactivar', async ({ page }) => {
+  await conectar(page, 'operario')
+  await page.getByRole('button', { name: 'Canciones' }).first().click()
+  await page.getByRole('row').nth(4).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Añadir a una lista' }).hover()
+  await page.getByRole('menuitem', { name: 'Favoritas de la casa' }).click()
+  await expect(page.getByText('Añadida a la lista')).toBeVisible()
+})
+
+test('administrador: puede desactivar canciones', async ({ page }) => {
+  await conectar(page, 'admin')
+  await expect(page.getByRole('button', { name: 'Desactivadas' })).toBeVisible()
+  await page.getByRole('button', { name: 'Canciones' }).first().click()
+  await page.getByRole('row').nth(2).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Desactivar' }).click()
+  await expect(page.getByText('1 desactivadas')).toBeVisible()
+  await page.getByRole('button', { name: 'Desactivadas' }).click()
+  await expect(page.getByRole('row').filter({ hasText: /^\d/ })).toHaveCount(1)
 })

@@ -12,7 +12,16 @@ export interface Biblioteca { artistas: Artista[]; albumes: Album[]; canciones: 
 export interface InfoServidor { version: string; serverType?: string | null; serverVersion?: string | null; openSubsonic: boolean }
 export interface ConexionActual { servidor: string; usuario: string; necesitaClave: boolean }
 export interface ListaServidor { id: string; nombre: string; canciones: string[] }
-export interface Lista { id: string; nombre: string; canciones: string[]; servidorId?: string }
+export type Rol = 'listener' | 'operator' | 'admin'
+export interface Lista {
+  id: string; nombre: string; canciones: string[]
+  /** Id de la lista en el servidor (bl-… de OmniCaster, pl-… de emisión) */
+  servidorId?: string
+  /** «lista» (las de OmniCaster y las mías) o «emisión» (solo lectura) */
+  grupo?: 'lista' | 'emision'
+}
+export interface ProgresoSubida { indice: number; total: number; nombre: string; fase: string; hecho: number; bytes: number; error?: string | null }
+export interface ResultadoSubida { creadas: number; existian: number; fallos: string[] }
 export interface PistaPeticion { id: string; formato?: string | null; gananciaDb?: number | null }
 export type EventoAudio =
   | { tipo: 'estado'; id: string | null; posicion: number; duracion: number; reproduciendo: boolean }
@@ -55,5 +64,10 @@ export interface Backend {
   sinConexionCarpeta(nueva?: string): Promise<string>
   onDescarga(cb: (p: ProgresoDescarga) => void): () => void
   elegirCarpeta(): Promise<string | null>
+  /** Método propio de OmniCaster (oc*, listas…). Devuelve el cuerpo de la respuesta aunque falle. */
+  llamarOc(metodo: string, params: [string, string][], cuerpo?: unknown): Promise<any>
+  elegirArchivos(): Promise<string[]>
+  subir(rutas: string[], bloque?: string): Promise<ResultadoSubida>
+  onSubida(cb: (p: ProgresoSubida) => void): () => void
   buscarActualizacion(): Promise<{ version: string; instalar: () => Promise<void> } | null>
 }

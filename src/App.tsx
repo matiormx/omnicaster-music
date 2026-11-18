@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { Conectar } from './components/Conectar'
 import { Actualizacion, BarraTitulo, Avisos, BarraReproductor, ContextMenu, Lateral, NuevaLista, PanelCola, Reproduciendo } from './components/shell'
-import { alternarPausa, anterior, arrancar, irA, obtener, poner, ponerVolumen, siguiente, useApp } from './store'
+import { alternarPausa, anterior, arrancar, irA, obtener, ponerVolumen, siguiente, useApp } from './store'
+import { ConfirmarMasivo, EditarDatos, FichaCancion, SubidaCanciones } from './components/gestion'
 import { Vista } from './views/vistas'
 
 function atajos(e: KeyboardEvent) {
@@ -48,7 +49,7 @@ export function App() {
     <div className={`app${panel ? ' con-panel' : ''}`}>
       <BarraTitulo />
       <Lateral />
-      <main className="contenido" onScroll={() => obtener().menu && poner({ menu: null })}>
+      <main className="contenido">
         <Actualizacion />
         <Vista ruta={ruta} />
       </main>
@@ -57,6 +58,10 @@ export function App() {
       <Reproduciendo />
       <ContextMenu />
       <NuevaLista />
+      <FichaCancion />
+      <EditarDatos />
+      <ConfirmarMasivo />
+      <SubidaCanciones />
       <Avisos />
     </div>
   )

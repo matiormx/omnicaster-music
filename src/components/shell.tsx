@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { backend } from '../backend'
+import { puede } from '../oc'
 import { Caratula, ContextMenu, EnlaceAlbum, EnlaceArtista, Icono } from './common'
 import {
-  alternarAleatorio, alternarFavorito, alternarPanelCola, alternarPausa, anterior, atras, aviso, buscar, buscarActualizaciones, cerrarSesion, ciclarRepetir, crearLista, formatoTiempo,
-  irA, irACola, navegar, poner, ponerTema, ponerVolumen, quitarDeCola, reordenarCola, siguiente, sincronizar, useApp, VERSION_APP, type Ruta, type Tema,
+  alternarAleatorio, alternarFavorito, alternarPanelCola, alternarPausa, anterior, atras, aviso, buscar, buscarActualizaciones, cerrarSesion, ciclarRepetir, crearLista, crearListaServidor, formatoTiempo,
+  irA, irACola, navegar, poner, ponerTema, ponerVolumen, quitarDeCola, reordenarCola, siguiente, sincronizar, subirCanciones, useApp, VERSION_APP, type Ruta, type Tema,
 } from '../store'
 
 // ---------------------------------------------------------------- barra lateral
@@ -21,6 +22,7 @@ export function Lateral() {
   const q = useApp((s) => s.busqueda)
   const sincronizando = useApp((s) => s.sincronizando)
   const hayPila = useApp((s) => s.pilaRutas.length > 0)
+  const rol = useApp((s) => s.rol)
   const act = (t: Ruta['t']) => ruta.t === t
   return (
     <aside className="lateral">
@@ -44,6 +46,14 @@ export function Lateral() {
         <Enlace ruta={{ t: 'listas' }} icono="list" texto="Listas" activo={act('listas') || act('lista')} />
         <Enlace ruta={{ t: 'favoritos' }} icono="heart" texto="Favoritos" activo={act('favoritos')} />
         <Enlace ruta={{ t: 'sinconexion' }} icono="download" texto="Sin conexión" activo={act('sinconexion')} />
+        {puede(rol, 'operator') && (
+          <>
+            <h3>Gestión</h3>
+            {backend.kind === 'tauri' && <button className="enlace-lateral" onClick={() => void subirCanciones()}><Icono n="plus" tam={18} /><span>Subir canciones</span></button>}
+            <Enlace ruta={{ t: 'revision' }} icono="note" texto="Para revisar" activo={act('revision')} />
+            {puede(rol, 'admin') && <Enlace ruta={{ t: 'desactivadas' }} icono="pause" texto="Desactivadas" activo={act('desactivadas')} />}
+          </>
+        )}
       </nav>
       <div className="lateral-pie">
         {sincronizando && <p className="sync" role="status">{sincronizando}</p>}
@@ -301,13 +311,17 @@ export function Avisos() {
 
 export function NuevaLista() {
   const ids = useApp((s) => s.nuevaLista)
+  const rol = useApp((s) => s.rol)
   const [nombre, setNombre] = useState('')
-  useEffect(() => { if (ids) setNombre('') }, [ids])
+  const [compartida, setCompartida] = useState(true)
+  useEffect(() => { if (ids) { setNombre(''); setCompartida(true) } }, [ids])
   if (!ids) return null
-  const crear = (ev: React.FormEvent) => {
+  const crear = async (ev: React.FormEvent) => {
     ev.preventDefault()
-    const l = crearLista(nombre, ids)
+    // Operarios y administradores pueden crearla en la nube (la ven todos); el resto, solo en este equipo.
+    const l = puede(rol, 'operator') && compartida ? await crearListaServidor(nombre, ids) : crearLista(nombre, ids)
     poner({ nuevaLista: null })
+    if (!l) return
     aviso(`Lista «${l.nombre}» creada`)
     navegar({ t: 'lista', id: l.id })
   }
@@ -316,6 +330,7 @@ export function NuevaLista() {
       <form className="modal" role="dialog" aria-label="Lista nueva" onClick={(e) => e.stopPropagation()} onSubmit={crear}>
         <h2>Lista nueva</h2>
         <input autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre de la lista" aria-label="Nombre de la lista" />
+        {puede(rol, 'operator') && <label className="check"><input type="checkbox" checked={compartida} onChange={(e) => setCompartida(e.target.checked)} /> Lista de OmniCaster (la ven todos)</label>}
         <div className="botones">
           <button type="button" className="boton" onClick={() => poner({ nuevaLista: null })}>Cancelar</button>
           <button type="submit" className="boton principal">Crear</button>

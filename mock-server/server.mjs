@@ -132,8 +132,10 @@ const fallo = (code, message) => ({ 'subsonic-response': { status: 'failed', ver
 const cancionOut = (s) => ({ ...s, isDir: false, type: 'music', ...(estrellas.has(s.id) ? { starred: '2026-01-01T00:00:00Z' } : {}) })
 const albumOut = (a) => ({ id: a.id, name: a.name, artist: a.artist, artistId: a.artistId, year: a.year, genre: a.genre, coverArt: a.coverArt, songCount: a.songCount, duration: a.duration, created: a.created })
 
+// Usuarios de prueba: demo (oyente), operario y admin. Contraseña: demo
+const ROLES = { demo: 'listener', operario: 'operator', admin: 'admin' }
 function autenticado(q) {
-  if (q.get('u') !== USER) return false
+  if (!(q.get('u') in ROLES)) return false
   if (q.get('t') && q.get('s')) return q.get('t') === crypto.createHash('md5').update(PASS + q.get('s')).digest('hex')
   return q.get('p') === PASS
 }
@@ -143,8 +145,48 @@ function pagina(lista, q, tam = 'size', off = 'offset') {
   return lista.slice(o, o + n)
 }
 
-function manejar(metodo, q) {
+const desactivadas = new Set()
+const revision = new Set()
+const extras = {} // datos de edición por canción
+const cambios = [] // registro de ediciones
+let listaBl = [0, 1, 2]
+const fichaOut = (s) => ({ ...cancionOut(s), energy: 3, mood: 'alegre', themes: 'verano, playa', language: 'es', tags: revision.has(s.id) ? 'revisar' : undefined, ocDisabled: desactivadas.has(s.id) || undefined, ...(extras[s.id] ?? {}) })
+const ROL_MIN = { ocEditSongs: 1, ocSetDisabled: 2, ocListSongs: 1, ocHistory: 1, ocUndo: 1, createPlaylist: 1, updatePlaylist: 1, deletePlaylist: 2 }
+const NIVEL = { listener: 0, operator: 1, admin: 2 }
+
+function manejar(metodo, q, cuerpo = {}) {
+  const rol = ROLES[q.get('u')]
+  if (metodo in ROL_MIN && NIVEL[rol] < ROL_MIN[metodo]) return fallo(50, 'No tienes permiso para hacer esto con tu usuario.')
   switch (metodo) {
+    case 'getUser': return resp({ user: { username: q.get('u'), ocRole: rol, adminRole: rol === 'admin' } })
+    case 'ocEditSongs': {
+      const ids = cuerpo.ids ?? []
+      if (ids.length > 10 && Number(cuerpo.confirm) !== ids.length) return { 'subsonic-response': { status: 'failed', version: '1.16.1', error: { code: 0, message: 'Cambio masivo: hace falta confirmarlo', confirmRequired: ids.length } } }
+      for (const id of ids) {
+        const c = porId[id]
+        if (!c) return fallo(70, `Canción no encontrada: ${id}`)
+        const set = cuerpo.set ?? {}
+        if (set.title) c.title = set.title
+        if (set.artist) c.artist = set.artist
+        if (set.album) c.album = set.album
+        if (set.energy !== undefined) (extras[id] ??= {}).energy = set.energy
+        if (set.mood !== undefined) (extras[id] ??= {}).mood = set.mood
+        if (cuerpo.review === true) revision.add(id)
+        if (cuerpo.review === false) revision.delete(id)
+        cambios.push({ n: cambios.length + 1, id, by: q.get('u') })
+      }
+      return resp({ changed: ids.length, unchanged: 0, batch: 'b1', song: ids.map((i) => fichaOut(porId[i])) })
+    }
+    case 'ocSetDisabled': {
+      for (const id of cuerpo.ids ?? []) cuerpo.disabled ? desactivadas.add(id) : desactivadas.delete(id)
+      return resp({ changed: (cuerpo.ids ?? []).length, unchanged: 0, batch: 'b2' })
+    }
+    case 'ocListSongs': return resp({ song: (q.get('filter') === 'disabled' ? [...desactivadas] : [...revision]).map((i) => fichaOut(porId[i])) })
+    case 'ocHistory': return resp({ entry: [] })
+    case 'updatePlaylist': {
+      for (const i of q.getAll('songIdToAdd')) { const n = canciones.findIndex((c) => c.id === i); if (n >= 0 && !listaBl.includes(n)) listaBl.push(n) }
+      return resp()
+    }
     case 'ping': return resp()
     case 'getLicense': return resp({ license: { valid: true } })
     case 'getOpenSubsonicExtensions': return resp({ openSubsonicExtensions: [{ name: 'formPost', versions: [1] }] })
@@ -166,6 +208,7 @@ function manejar(metodo, q) {
       return resp({ album: { ...albumOut(a), song: canciones.filter((s) => s.albumId === a.id).map(cancionOut) } })
     }
     case 'getSong': {
+      if (porId[q.get('id')]) return resp({ song: fichaOut(porId[q.get('id')]) })
       const s = porId[q.get('id')]
       return s ? resp({ song: cancionOut(s) }) : fallo(70, 'Canción no encontrada')
     }
@@ -198,8 +241,10 @@ function manejar(metodo, q) {
         },
       })
     }
-    case 'getPlaylists': return resp({ playlists: { playlist: [{ id: 'pl-1', name: 'Mezcla de ejemplo', songCount: 3 }] } })
-    case 'getPlaylist': return resp({ playlist: { id: 'pl-1', name: 'Mezcla de ejemplo', songCount: 3, entry: canciones.slice(0, 3).map(cancionOut) } })
+    case 'getPlaylists': return resp({ playlists: { playlist: [{ id: 'bl-1', name: 'Favoritas de la casa', songCount: listaBl.length }, { id: 'pl-1', name: 'Emisión · Mezcla de ejemplo', songCount: 3 }] } })
+    case 'getPlaylist': return q.get('id') === 'bl-1'
+      ? resp({ playlist: { id: 'bl-1', name: 'Favoritas de la casa', songCount: listaBl.length, entry: listaBl.map((n) => cancionOut(canciones[n])) } })
+      : resp({ playlist: { id: 'pl-1', name: 'Emisión · Mezcla de ejemplo', songCount: 3, entry: canciones.slice(0, 3).map(cancionOut) } })
     case 'getStarred2': return resp({ starred2: { song: [...estrellas].map((i) => cancionOut(porId[i])), album: [], artist: [] } })
     // star, unstar, scrobble: el servidor real puede no hacer nada; aquí tampoco.
     case 'star': case 'unstar': case 'scrobble': return resp()
@@ -241,6 +286,12 @@ http
       if (!/^al-\d+$/.test(id)) return json(fallo(70, 'Carátula no encontrada'))
       res.writeHead(200, { ...cors, 'Content-Type': 'image/png', 'Cache-Control': 'max-age=3600' })
       return res.end(png(Number(id.slice(3)), Math.min(Number(q.get('size') || 120), 240)))
+    }
+    if (req.method === 'POST') {
+      let datos = ''
+      req.on('data', (d) => (datos += d))
+      req.on('end', () => { let c = {}; try { c = JSON.parse(datos || '{}') } catch { /* sin cuerpo */ } json(manejar(metodo, q, c)) })
+      return
     }
     json(manejar(metodo, q))
   })

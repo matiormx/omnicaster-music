@@ -271,3 +271,22 @@ html.con-titulo #root { position: absolute; inset: 32px 0 0 0; height: auto; }
 .bt-botones button { width: 46px; height: 100%; display: grid; place-items: center; color: var(--texto2); border-radius: 0; }
 .bt-botones button:hover { background: var(--hover); color: var(--texto); }
 .bt-botones button.cerrar:hover { background: #e5384f; color: #fff; }
+
+/* ---- gestión de la biblioteca */
+.modal-ancho { max-height: 86vh; overflow: auto; }
+.ficha { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0; }
+.ficha dt { color: var(--texto2); font-size: 12px; padding-top: 2px; }
+.ficha dd { margin: 0; user-select: text; word-break: break-word; }
+.energia { letter-spacing: 3px; color: var(--acento); }
+.form-edicion { display: flex; flex-direction: column; gap: 10px; }
+.campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--texto2); }
+.campo select { background: var(--fondo2); border: 1px solid var(--linea); border-radius: 8px; padding: 9px 11px; color: inherit; }
+.nota { font-size: 12px; color: var(--texto2); margin: 0; }
+.error { color: #d33; font-size: 13px; }
+.check { display: flex; gap: 8px; align-items: center; }
+.check input { width: auto; }
+.historial h3 { font-size: 13px; margin: 6px 0; }
+.fila-hist { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+.grupo-listas { margin-top: 18px; }
+.grupo-listas h2 { font-size: 15px; margin: 0 0 10px; }
+.insignia { font-size: 11px; color: var(--texto2); }

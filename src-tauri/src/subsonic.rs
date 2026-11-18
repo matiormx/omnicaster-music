@@ -477,6 +477,33 @@ pub fn error_red(e: &reqwest::Error) -> SubsonicError {
     SubsonicError::Network(msg)
 }
 
+// ------------------------------------------------- métodos propios de OmniCaster (oc*)
+
+impl Client {
+    /// Llama a un método propio de OmniCaster (GET, o POST con JSON). Devuelve el cuerpo
+    /// completo de `subsonic-response` también cuando falla (`status: "failed"`), para que la
+    /// interfaz pueda leer, por ejemplo, `error.confirmRequired` en los cambios masivos.
+    pub fn call_oc(&self, method: &str, extra: &[(String, String)], cuerpo: Option<&Value>) -> Result<Value, SubsonicError> {
+        let extra: Vec<(&str, String)> = extra.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        let url = self.url(method, &extra);
+        let peticion = match cuerpo {
+            Some(c) => self.http.post(&url).json(c),
+            None => self.http.get(&url),
+        };
+        let resp = peticion.send().map_err(|e| error_red(&e))?;
+        let status = resp.status();
+        let texto = resp.text().map_err(|e| error_red(&e))?;
+        if !status.is_success() && !texto.trim_start().starts_with('{') {
+            return Err(SubsonicError::Network(format!("El servidor respondió con el código HTTP {}.", status.as_u16())));
+        }
+        let v: Value = serde_json::from_str(&texto)
+            .map_err(|_| SubsonicError::Parse("El servidor no ha devuelto una respuesta Subsonic válida.".into()))?;
+        v.get("subsonic-response")
+            .cloned()
+            .ok_or_else(|| SubsonicError::Parse("La respuesta no contiene «subsonic-response».".into()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

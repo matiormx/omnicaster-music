@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod db;
 pub mod rangecache;
+pub mod subida;
 pub mod subsonic;
 
 use audio::{Evento, Motor, Origen, Pista};
@@ -642,6 +643,39 @@ fn medios_estado(app: AppHandle, reproduciendo: bool, posicion: f64) -> Result<(
     Ok(())
 }
 
+// ---------------------------------------------------------------- gestión de la biblioteca (oc*)
+
+/// Llama a un método propio de OmniCaster (permisos comprobados en el servidor) y devuelve el
+/// cuerpo de la respuesta, también cuando falla. Aquí no hay ningún método que borre canciones.
+#[tauri::command]
+async fn servidor_oc(app: AppHandle, metodo: String, params: Vec<(String, String)>, cuerpo: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+    bloquear(move || {
+        if !(metodo.starts_with("oc") || matches!(metodo.as_str(), "getUser" | "getSong" | "createPlaylist" | "updatePlaylist" | "deletePlaylist" | "getPlaylists" | "getPlaylist")) {
+            return Err("Método no permitido.".into());
+        }
+        let cli = app.state::<Estado>().cliente()?;
+        cli.call_oc(&metodo, &params, cuerpo.as_ref()).map_err(e)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn subir_archivos(app: AppHandle, rutas: Vec<String>, bloque: Option<String>) -> Result<subida::Resultado, String> {
+    bloquear(move || {
+        let cli = app.state::<Estado>().cliente()?;
+        let h = app.clone();
+        subida::subir(&cli, rutas, bloque, &move |p| {
+            let _ = h.emit("subida-progreso", p);
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+fn extensiones_audio() -> Vec<&'static str> {
+    subida::EXTENSIONES.to_vec()
+}
+
 // ---------------------------------------------------------------- arranque
 
 pub fn run() {
@@ -698,6 +732,9 @@ pub fn run() {
             sin_conexion_carpeta,
             medios_metadatos,
             medios_estado,
+            servidor_oc,
+            subir_archivos,
+            extensiones_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar OmniCaster Music");

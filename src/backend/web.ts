@@ -192,5 +192,18 @@ export const backendWeb: Backend = {
   async sinConexionCarpeta() { return '(solo disponible en la aplicación de escritorio)' },
   onDescarga() { return () => {} },
   async elegirCarpeta() { return null },
+  async llamarOc(metodo, params, cuerpo) {
+    const c = cred!
+    const sal = Math.random().toString(36).slice(2, 14).padEnd(12, 'x')
+    const q = new URLSearchParams({ u: c.usuario, t: md5(c.clave + sal), s: sal, v: '1.16.1', c: 'OmniCasterMusic', f: 'json' })
+    for (const [k, v] of params) q.append(k, v)
+    const r = await fetch(`${normalizar(c.servidor)}/rest/${metodo}?${q}`, cuerpo === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cuerpo) })
+    const j = await r.json().catch(() => null)
+    if (!j?.['subsonic-response']) throw 'El servidor no ha devuelto una respuesta Subsonic válida.'
+    return j['subsonic-response']
+  },
+  async elegirArchivos() { return [] },
+  async subir() { throw 'Subir canciones solo está disponible en la aplicación de escritorio.' },
+  onSubida() { return () => {} },
   async buscarActualizacion() { return null },
 }
